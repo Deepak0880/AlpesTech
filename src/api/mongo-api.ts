@@ -1,66 +1,58 @@
-// This file serves as a client-side API adapter
-// It will make HTTP requests to our Express backend server
+// frontend/src/api/apiClient.ts
+// Safe, environment-variable-based API client for frontend
 
-// Use environment variables for API endpoint with fallback
+// Use environment variable for backend API URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-
-// Log the API URL being used
 console.log('Using API URL:', API_BASE_URL);
 
-interface MongoDBResponse<T> {
+interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
 }
 
-// Generic function to make requests to our Express API
+/**
+ * Generic API request function
+ */
 export async function callAPI<T>(
-  method: string,
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   endpoint: string,
   body?: any
-): Promise<MongoDBResponse<T>> {
+): Promise<ApiResponse<T>> {
   try {
-    console.log(`API Request: ${method} ${endpoint}`, body);
-    
-    const options: RequestInit = {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      // Include credentials for cookies if needed
-      credentials: 'include'
+    const url = new URL(`${API_BASE_URL}/${endpoint}`);
+
+    // For GET requests with query parameters
+    if (method === 'GET' && body) {
+      Object.entries(body).forEach(([key, value]) => {
+        url.searchParams.append(key, String(value));
+      });
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
     };
 
-    // Add authorization header if user is logged in
-    const storedUser = localStorage.getItem("user");
+    // Add Authorization header if user is stored
+    const storedUser = localStorage.getItem('user');
     if (storedUser) {
       const user = JSON.parse(storedUser);
-      if (user.email) {
-        options.headers = {
-          ...options.headers,
-          'Authorization': `Bearer ${user.email}`
-        };
+      if (user.token) {
+        headers['Authorization'] = `Bearer ${user.token}`;
       }
     }
 
-    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      options.body = JSON.stringify(body);
-    }
+    const options: RequestInit = {
+      method,
+      headers,
+      credentials: 'include', // optional: use if backend uses cookies
+      body: method !== 'GET' && body ? JSON.stringify(body) : undefined
+    };
 
-    // For GET requests with query params
-    let url = `${API_BASE_URL}/${endpoint}`;
-    if (method === 'GET' && body) {
-      const queryParams = new URLSearchParams();
-      Object.entries(body).forEach(([key, value]) => {
-        queryParams.append(key, String(value));
-      });
-      url += `?${queryParams.toString()}`;
-    }
+    console.log(`Fetching ${method} ${url.toString()}`, body);
 
-    console.log(`Fetching from URL: ${url}`);
-    const response = await fetch(url, options);
+    const response = await fetch(url.toString(), options);
     const data = await response.json();
-    console.log(`API Response:`, data);
 
     if (!response.ok) {
       throw new Error(data.message || 'API request failed');
@@ -71,34 +63,36 @@ export async function callAPI<T>(
     console.error(`API Error (${endpoint}):`, error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
 
-// API Functions for user operations
-export async function createUserAPI(userData: any): Promise<MongoDBResponse<any>> {
-  console.log('Creating user:', userData);
+/**
+ * User API functions
+ */
+export async function createUser(userData: any) {
   return callAPI('POST', 'users', userData);
 }
 
-export async function findUserByEmailAPI(email: string): Promise<MongoDBResponse<any>> {
+export async function getUserByEmail(email: string) {
   return callAPI('GET', 'users', { email });
 }
 
-export async function updateUserEnrollmentAPI(userId: string, courseId: string): Promise<MongoDBResponse<any>> {
+export async function enrollUserInCourse(userId: string, courseId: string) {
   return callAPI('PATCH', `users/${userId}/enroll`, { courseId });
 }
 
-// Test connection to MongoDB through our Express server
-export async function testConnectionAPI(): Promise<MongoDBResponse<any>> {
-  try {
-    const response = await callAPI('GET', 'test-connection');
-    return response;
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to connect to MongoDB',
-    };
-  }
-} 
+/**
+ * Courses API
+ */
+export async function getCourses() {
+  return callAPI('GET', 'courses');
+}
+
+/**
+ * Test backend connection
+ */
+export async function testConnection() {
+  return callAPI('GET', 'test-connection');
+}
